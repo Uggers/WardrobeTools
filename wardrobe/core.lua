@@ -1,12 +1,12 @@
---[[ 
+--[[
 
 	Martin Karer / Sezz, 2016
-	
+
 	PlayerHasTransmog(itemID|itemLink[, checkSource, forceRefresh])
 		Returns if the player has collected the item apperance,
 		Use ItemIsValidTransmogrifySource first to check if the item appearance can be used for transmogging or pass checkSource as 2nd optional argument.
 		Set forceRefresh to true if you are also calling this on TRANSMOG_COLLECTION_UPDATED!
-		
+
 		Return values:
 			hasTransmog (boolean)
 			hasTransmogSource (boolean) - due to Blizzard's limitations this only works for items the player can equip it
@@ -40,6 +40,7 @@
 		Returns values:
 			isTradable (boolean)
 
+
 --]]
 
 local addonName, ns = ...;
@@ -58,9 +59,21 @@ if (addonName == "WardrobeTools" and SezzUI) then return; end
 local strmatch, tonumber, select = string.match, tonumber, select;
 
 -- WoW API/Constants
-local IsDressableItem, GetItemInfo = IsDressableItem, GetItemInfo;
-local TRANSMOGRIFY_TOOLTIP_APPEARANCE_UNKNOWN, TRANSMOGRIFY_TOOLTIP_APPEARANCE_KNOWN, TRANSMOGRIFY_TOOLTIP_ITEM_UNKNOWN_APPEARANCE_KNOWN = TRANSMOGRIFY_TOOLTIP_APPEARANCE_UNKNOWN, TRANSMOGRIFY_TOOLTIP_APPEARANCE_KNOWN, TRANSMOGRIFY_TOOLTIP_ITEM_UNKNOWN_APPEARANCE_KNOWN;
-local LE_ITEM_CLASS_ARMOR, LE_ITEM_ARMOR_CLOTH, LE_ITEM_ARMOR_LEATHER, LE_ITEM_ARMOR_MAIL, LE_ITEM_ARMOR_PLATE, LE_ITEM_CLASS_WEAPON, LE_ITEM_ARMOR_COSMETIC = LE_ITEM_CLASS_ARMOR, LE_ITEM_ARMOR_CLOTH, LE_ITEM_ARMOR_LEATHER, LE_ITEM_ARMOR_MAIL, LE_ITEM_ARMOR_PLATE, LE_ITEM_CLASS_WEAPON, LE_ITEM_ARMOR_COSMETIC;
+local IsDressableItem = IsDressableItem or C_Item.IsDressableItemByID
+local GetItemInfo = GetItemInfo;
+local TRANSMOGRIFY_TOOLTIP_APPEARANCE_UNKNOWN = TRANSMOGRIFY_TOOLTIP_APPEARANCE_UNKNOWN
+local TRANSMOGRIFY_TOOLTIP_APPEARANCE_KNOWN = TRANSMOGRIFY_TOOLTIP_APPEARANCE_KNOWN
+local TRANSMOGRIFY_TOOLTIP_ITEM_UNKNOWN_APPEARANCE_KNOWN = TRANSMOGRIFY_TOOLTIP_ITEM_UNKNOWN_APPEARANCE_KNOWN
+-- Armor
+local LE_ITEM_CLASS_ARMOR = LE_ITEM_CLASS_ARMOR or Enum.ItemClass.Armor or 4
+local LE_ITEM_ARMOR_CLOTH = LE_ITEM_ARMOR_CLOTH or Enum.ItemArmorSubclass.Cloth or 1
+local LE_ITEM_ARMOR_LEATHER = LE_ITEM_ARMOR_LEATHER or Enum.ItemArmorSubclass.Leather or 2
+local LE_ITEM_ARMOR_MAIL = LE_ITEM_ARMOR_MAIL or Enum.ItemArmorSubclass.Mail or 3
+local LE_ITEM_ARMOR_PLATE = LE_ITEM_ARMOR_PLATE or Enum.ItemArmorSubclass.Plate or 4
+local LE_ITEM_ARMOR_COSMETIC = LE_ITEM_ARMOR_COSMETIC or Enum.ItemArmorSubclass.Cosmetic or 5
+
+-- Weapons
+local LE_ITEM_CLASS_WEAPON = LE_ITEM_CLASS_WEAPON or Enum.ItemClass.Weapon or 2
 
 -----------------------------------------------------------------------------
 
@@ -110,7 +123,7 @@ local equipSlotIDs = {
 local PlayerHasApperanceSource = function(item)
 	-- Only works if C_TransmogCollection.GetShowMissingSourceInItemTooltips() is true!
 	tooltip:SetHyperlink(item);
-	
+
 	for i = tooltip:NumLines(), 1, -1 do
 		local text = tooltip.L[i];
 		if (text) then
@@ -124,6 +137,7 @@ local PlayerHasApperanceSource = function(item)
 
 	return false;
 end
+
 
 local PlayerHasTransmog = function(item, checkSource, forceRefresh)
 	if (not item or (checkSource and not S.ItemIsValidTransmogrifySource(item))) then return; end
@@ -146,9 +160,25 @@ local PlayerHasTransmog = function(item, checkSource, forceRefresh)
 			local itemID = type(item) == "string" and tonumber(strmatch(item, "item:(%d+)")) or item;
 			isCollected = C_TransmogCollection.PlayerHasTransmog(itemID);
 		else
-			model:TryOn(item);
+			model:TryOn(item,slot);
 
-			local appearanceSourceID = model:GetSlotTransmogSources(equipSlotIDs[equipSlot]);
+			--local appearanceSourceID = model:GetSlotTransmogSources(equipSlotIDs[equipSlot]);
+
+			-- Credit to TorelTwiddler (CanIMogIt)
+
+			local transmogInfo = model:GetItemTransmogInfo(equipSlotIDs[equipSlot]);
+			if transmogInfo and
+				transmogInfo.appearanceID ~= nil and
+				transmogInfo.appearanceID ~= 0 then
+				-- Yes, that's right, we are setting `appearanceID` to the `sourceID`. Blizzard messed
+				-- up the DressUpModel functions, so _they_ don't even know what they do anymore.
+				-- The `appearanceID` field from `DressUpModel:GetItemTransmogInfo` is actually its
+				-- source ID, not it's appearance ID.
+				appearanceSourceID = transmogInfo.appearanceID
+			end
+
+			--
+
 			if (appearanceSourceID == 0 and (equipSlotIDs[equipSlot] == 16 or equipSlotIDs[equipSlot] == 17)) then
 				-- Even though the model is undressed it sometimes puts weapons into the offhand slot instead of the mainhand slot,
 				-- especially when equipping 2 similar items (like two Baleful weapons with different attributes)
@@ -219,6 +249,7 @@ local PlayerHasTransmog = function(item, checkSource, forceRefresh)
 	return isCollected, isCollectedSource;
 end
 
+
 S.PlayerHasTransmog = PlayerHasTransmog;
 
 -----------------------------------------------------------------------------
@@ -231,7 +262,11 @@ local ItemIsValidTransmogrifySource = function(itemLink)
 	if (itemClassID == LE_ITEM_CLASS_ARMOR and itemSubClassID == LE_ITEM_ARMOR_COSMETIC) then return true; end -- C_Transmog.GetItemInfo() doesn't like cosmetic armor
 
 	local isDressable = IsDressableItem(itemID);
-	local _, _, canBeSource, noSourceReason = C_Transmog.GetItemInfo(itemID);
+	-- message(itemID)
+
+	-- local _, _, canBeSource, noSourceReason = C_Transmog.GetItemInfo(itemID);
+	local _, _, canBeSource, noSourceReason = select(1, C_Transmog.CanTransmogItem(itemID))
+
 	if (not isDressable or not canBeSource) then return false, noSourceReason; end
 
 	if (equipSlot == "INVTYPE_NECK" or equipSlot == "INVTYPE_FINGER" or equipSlot == "INVTYPE_TRINKET") then return false; end
@@ -252,7 +287,7 @@ elseif (S.myClass == "WARRIOR" or S.myClass == "PALADIN" or S.myClass == "DEATHK
 	classArmor = LE_ITEM_ARMOR_PLATE;
 elseif (S.myClass == "MAGE" or S.myClass == "PRIEST" or S.myClass == "WARLOCK") then
 	classArmor = LE_ITEM_ARMOR_CLOTH;
-elseif (S.myClass == "SHAMAN" or S.myClass == "HUNTER") then
+elseif (S.myClass == "SHAMAN" or S.myClass == "HUNTER" or S.myClass == "EVOKER") then
 	classArmor = LE_ITEM_ARMOR_MAIL;
 end
 
